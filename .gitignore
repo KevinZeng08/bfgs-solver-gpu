@@ -1,0 +1,9 @@
+.vscode/
+
+# compiled project
+build/
+
+# visual studio related
+bfgs-solver/
+*.sln
+*.vcxproj*
