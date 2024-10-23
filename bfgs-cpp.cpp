@@ -13,6 +13,14 @@
 
 #include "array2.h"
 
+#define START_CPU {\
+double start = omp_get_wtime();
+
+#define END_CPU(name) \
+double end = omp_get_wtime();\
+double duration = end - start;\
+printf("%s Time used: %3.1f ms\n", name, duration * 1000);}
+
 std::vector<int> objEqHeads, gradEqHeads;
 std::vector<double> objEqVals, gradEqVals;
 
@@ -426,7 +434,7 @@ static void _CalcGrad(const std::vector<double>& x, std::vector<double>& g,
 	int n = x.size();
 	for (int i = 0; i < n; i++) {
 		//double v1 = _CalcEq(x, eqs[i], eqs);
-		double v2 = _CalcEqNew1(x, eqs[i], eqs, i == n - 1 ? -1 : i, gradEqHeads, gradEqVals.size(), gradEqVals);
+		double v2 = _CalcEqNew1(x, eqs[i], eqs, i == n - 1 ? -i : i, gradEqHeads, gradEqVals.size(), gradEqVals);
 		//assert(v1 == v2);
 		g[i] = v2;
 	}
@@ -734,6 +742,7 @@ STEP2:
 	_VecNorm(p);
 
 STEP3:
+	START_CPU
 	if (itCounter++ > itMax)
 		goto END;
 
@@ -746,6 +755,7 @@ STEP3:
 		goto END;
 
 	_CalcGrad(xNow, gNow, gradEqs);
+	END_CPU("STEP3")
 
 //STEP4:
 	if (_HTerminate(xPrev, xNow, fPrev, fNow, gNow))
@@ -765,6 +775,7 @@ STEP3:
 	}
 
 //STEP7:
+	START_CPU
 	_VecSub(gNow, gPrev, y);
 	_VecSub(xNow, xPrev, s);
 
@@ -787,6 +798,7 @@ STEP3:
 		fPrev = fNow;
 		_VecCopy(gPrev, gNow);
 		_VecCopy(xPrev, xNow);
+		END_CPU("STEP7")
 		goto STEP3;
 	}
 
