@@ -30,28 +30,31 @@ else(
 endif()
 
 # 添加可执行文件 - CUDA版本
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bfgs-cu.cu")
-    find_package(CUDA REQUIRED)
-    add_executable(BFGSCUDA ${CUDA_SOURCES})
+find_package(CUDA REQUIRED)
+add_executable(BFGSCUDA ${CUDA_SOURCES})
 
-    # 链接OpenMP库
-    target_link_libraries(BFGSCUDA PUBLIC OpenMP::OpenMP_CXX)
+# 链接OpenMP库
+target_link_libraries(BFGSCUDA PUBLIC OpenMP::OpenMP_CXX)
     
-    # 设置CUDA编译选项
-    set_target_properties(BFGSCUDA PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    set_target_properties(BFGSCUDA PROPERTIES
-        CUDA_ARCHITECTURES "86;80;75;72")
-    # debug
-    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-        target_compile_options(BFGSCUDA PRIVATE
-            $<$<COMPILE_LANGUAGE:CUDA>: -G -g>
-        )
-    else()
-        target_compile_options(BFGSCUDA PRIVATE
-            $<$<COMPILE_LANGUAGE:CUDA>: -O3>
-        )
-    endif()
+# 设置CUDA编译选项
+set_target_properties(BFGSCUDA PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+set_target_properties(BFGSCUDA PROPERTIES CUDA_ARCHITECTURES "86;80;75;72")
+# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --fmad=false --ftz=false --prec-div=true --prec-sqrt=true")
+# debug
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(BFGSCUDA PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>: -G -g>
+    )
+# else()
+#     target_compile_options(BFGSCUDA PRIVATE
+#         $<$<COMPILE_LANGUAGE:CUDA>: -O3>
+#     )
 endif()
+
+add_executable(evaluate evaluate.cu)
+
+set_target_properties(evaluate PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+set_target_properties(evaluate PROPERTIES CUDA_ARCHITECTURES "86;80;75;72")
 
 # 为方便使用，可以添加别名目标
 add_custom_target(cpu
@@ -62,5 +65,9 @@ add_custom_target(cpu
 add_custom_target(cuda
     COMMAND ${CMAKE_COMMAND} --build . --target BFGSCUDA
     COMMENT "Building CUDA version"
-    DEPENDS BFGSCUDA
+)
+
+add_custom_target(eval
+    COMMAND ${CMAKE_COMMAND} --build . --target evaluate
+    COMMENT "Evaluating GEMV"
 )

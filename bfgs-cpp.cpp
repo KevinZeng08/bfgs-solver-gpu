@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "array2.h"
+#include "ops.h"
 
 #define START_CPU                                                              \
   {                                                                            \
@@ -436,23 +437,14 @@ static void _CalcyTH(const std::vector<double> &y, const array2<double> &H,
   int i, j;
   int n = y.size();
 
-  std::fill(yTH.begin(), yTH.end(), 0.0);
-  for (j = 0; j < n; j++)
-    for (i = 0; i < n; i++) {
-      yTH[i] += (y[j] * H(j, i));
-    }
+  _GEMVCpu<double>(H.data(), CPULayout::COL_MAJOR, y.data(), yTH.data(),
+                   H.rows(), H.cols());
 }
 
 static void _CalcHy(const array2<double> &H, const std::vector<double> &y,
                     std::vector<double> &Hy) {
-  int i, j;
-  int n = y.size();
-
-  for (i = 0; i < n; i++) {
-    Hy[i] = 0.0;
-    for (j = 0; j < n; j++)
-      Hy[i] += (y[j] * H(i, j));
-  }
+  _GEMVCpu<double>(H.data(), CPULayout::ROW_MAJOR, y.data(), Hy.data(),
+                   H.rows(), H.cols());
 }
 
 static void _Calcp(const array2<double> &H, const std::vector<double> &g,
@@ -462,6 +454,14 @@ static void _Calcp(const array2<double> &H, const std::vector<double> &g,
   int n = p.size();
   while (n--)
     p[n] = -p[n];
+}
+
+static void _UpdateH(array2<double> &H, const std::vector<double> &yTH,
+                     const std::vector<double> &y, double sy,
+                     const std::vector<double> &s,
+                     const std::vector<double> &Hy) {
+  int n = y.size();
+  _UpdateHCpu(H.data(), y.data(), yTH.data(), sy, s.data(), Hy.data(), n);
 }
 
 #define BFGS_MAXBOUND 1e+10
@@ -703,7 +703,6 @@ int BFGSSolveEqs(const std::string &filepath) {
   double t0 = omp_get_wtime();
   // Do optimization
   double fNow = 0, fPrev = 0;
-  ;
   int n = xNow.size();
   int k = 0; // useless?
   int itCounter = 0;
@@ -738,7 +737,7 @@ STEP2:
   _VecNorm(p);
 
 STEP3:
-  START_CPU
+  // START_CPU
   if (itCounter++ > itMax)
     goto END;
 
@@ -747,14 +746,14 @@ STEP3:
   fNow = _CalcObj(xNow, objEqs, numObjEqs);
   std::cout << itCounter << " iterations, "
             << "f(x) = " << fNow << std::endl;
-  fErr.push_back(fNow);
-  sparsity.push_back(CalcSparsity(H));
+  // fErr.push_back(fNow);
+  // sparsity.push_back(CalcSparsity(H));
 
   if (fNow < eps)
     goto END;
 
   _CalcGrad(xNow, gNow, gradEqs);
-  END_CPU("STEP3")
+  // END_CPU("STEP3")
 
   // STEP4:
   if (_HTerminate(xPrev, xNow, fPrev, fNow, gNow))
@@ -774,42 +773,28 @@ STEP3:
   }
 
   // STEP7:
-  START_CPU
+  // START_CPU
   _VecSub(gNow, gPrev, y);
   _VecSub(xNow, xPrev, s);
 
-  double sparsity_y = CalcSparsity(y);
-  printf("sparsity_y = %lf\n", sparsity_y);
+  // double sparsity_y = CalcSparsity(y);
+  // printf("sparsity_y = %lf\n", sparsity_y);
 
   {
     double sy = _VecDot(s, y);
     if (fabs(sy) < epsZero1)
       goto END;
 
-    // START_CPU
     _CalcyTH(y, H, yTH);
-    // END_CPU("CalcyTH")
-    // START_CPU
     _CalcHy(H, y, Hy);
-    // END_CPU("CalcHy")
-
-    double tmp = (1.0 + _VecDot(yTH, y) / sy);
-    // START_CPU
-    for (int i = 0; i < n; i++)
-      for (int j = 0; j < n; j++)
-        H(i, j) += (((tmp * s[i] * s[j]) - Hy[i] * s[j] - s[i] * yTH[j]) / sy);
-    // END_CPU("UpdateH")
-    // START_CPU
+    _UpdateH(H, yTH, y, sy, s, Hy);
     _Calcp(H, gNow, p);
-    // END_CPU("Calcp")
-    // START_CPU
     _VecNorm(p);
-    // END_CPU("VecNorm")
 
     fPrev = fNow;
     _VecCopy(gPrev, gNow);
     _VecCopy(xPrev, xNow);
-    END_CPU("STEP7")
+    // END_CPU("STEP7")
     goto STEP3;
   }
 
@@ -819,12 +804,12 @@ END:
   double dt = omp_get_wtime() - t0;
   printf("###Solver totally used %2.5f s ...\n", dt);
   // save the sparsity and fErr
-  FILE *fp = fopen("sparsity_1e-20.csv", "w");
-  fprintf(fp, "iter,sparsity,fErr\n");
-  for (int i = 0; i < sparsity.size(); i++) {
-    fprintf(fp, "%d,%lf,%lf\n", i, sparsity[i], fErr[i]);
-  }
-  fclose(fp);
+  // FILE *fp = fopen("sparsity_1e-20.csv", "w");
+  // fprintf(fp, "iter,sparsity,fErr\n");
+  // for (int i = 0; i < sparsity.size(); i++) {
+  //   fprintf(fp, "%d,%lf,%lf\n", i, sparsity[i], fErr[i]);
+  // }
+  // fclose(fp);
 
   // Put results back...
   if (fNow < eps) {

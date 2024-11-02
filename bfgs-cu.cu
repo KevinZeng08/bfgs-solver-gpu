@@ -11,9 +11,11 @@
 #include <string>
 #include <vector>
 
-// #include <thrust/device_vector.h>
+#include <thrust/device_vector.h>
 
-// #include "utils.cuh"
+#include "ops.cuh"
+#include "utils.cuh"
+
 #include "array2.h"
 
 #define START_CPU                                                              \
@@ -415,48 +417,64 @@ static double _CalcObj(const std::vector<double> &x0, double h,
   return _CalcObj(xt, eqs, eqNum);
 }
 
-static void _CalcyTH(const std::vector<double> &y, const array2<double> &H,
-                     std::vector<double> &yTH) {
-  int i, j;
+/**
+ * y^T @ H = (H^T @ y)^T
+ */
+static void _CalcyTH(const thrust::device_vector<double> &y,
+                     const thrust::device_vector<double> &H,
+                     thrust::device_vector<double> &yTH) {
   int n = y.size();
 
-  std::fill(yTH.begin(), yTH.end(), 0.0);
-  for (j = 0; j < n; j++)
-    for (i = 0; i < n; i++) {
-      yTH[i] += (y[j] * H(j, i));
-    }
+  thrust::fill(yTH.begin(), yTH.end(), 0.0);
+  _GEMVKernel<double><<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
+      thrust::raw_pointer_cast(H.data()), GPULayout::COL_MAJOR,
+      thrust::raw_pointer_cast(y.data()), thrust::raw_pointer_cast(yTH.data()),
+      n, n);
 }
 
-static void _CalcHy(const array2<double> &H, const std::vector<double> &y,
-                    std::vector<double> &Hy) {
-  int i, j;
+static void _CalcHy(const thrust::device_vector<double> &H,
+                    const thrust::device_vector<double> &y,
+                    thrust::device_vector<double> &Hy) {
   int n = y.size();
 
-  for (i = 0; i < n; i++) {
-    Hy[i] = 0.0;
-    for (j = 0; j < n; j++)
-      Hy[i] += (y[j] * H(i, j));
-  }
+  _GEMVKernel<double><<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
+      thrust::raw_pointer_cast(H.data()), GPULayout::ROW_MAJOR,
+      thrust::raw_pointer_cast(y.data()), thrust::raw_pointer_cast(Hy.data()),
+      n, n);
 }
 
-static void _Calcp(const array2<double> &H, const std::vector<double> &g,
-                   std::vector<double> &p) {
+static void _Calcp(const thrust::device_vector<double> &H,
+                   const thrust::device_vector<double> &g,
+                   thrust::device_vector<double> &p) {
   _CalcHy(H, g, p);
 
   int n = p.size();
-  while (n--)
-    p[n] = -p[n];
+  thrust::transform(p.begin(), p.end(), p.begin(), thrust::negate<double>());
 }
 
-static void _UpdateH(array2<double> &H, const std::vector<double> &yTH,
-                     const std::vector<double> &y, double sy,
-                    const std::vector<double> &s,
-                    const std::vector<double> &Hy) {
+/**
+ * H = (n, n), yTH = (1, n), y = (1, n), s = (1, n), Hy = (1, n)
+ */
+static void _UpdateH(thrust::device_vector<double> &H,
+                     const thrust::device_vector<double> &yTH,
+                     const thrust::device_vector<double> &y, double sy,
+                     const thrust::device_vector<double> &s,
+                     const thrust::device_vector<double> &Hy) {
   int n = y.size();
-  double tmp = (1.0 + _VecDot(yTH, y) / sy);
-  for (int i = 0; i < n; i++)
-      for (int j = 0; j < n; j++)
-        H(i, j) += (((tmp * s[i] * s[j]) - Hy[i] * s[j] - s[i] * yTH[j]) / sy);
+  thrust::device_vector<double> dot(1);
+  _DotProductKernel<<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
+      thrust::raw_pointer_cast(yTH.data()), thrust::raw_pointer_cast(y.data()),
+      thrust::raw_pointer_cast(dot.data()), n);
+
+  dim3 blockSize(BLOCK_SIZE_X, BLOCK_SIZE_Y);
+  dim3 gridSize((n + BLOCK_SIZE_X - 1) / BLOCK_SIZE_X,
+                (n + BLOCK_SIZE_Y - 1) / BLOCK_SIZE_Y);
+  _UpdateHKernel<<<gridSize, blockSize>>>(
+      thrust::raw_pointer_cast(H.data()), thrust::raw_pointer_cast(dot.data()),
+      thrust::raw_pointer_cast(yTH.data()), sy,
+      thrust::raw_pointer_cast(s.data()), thrust::raw_pointer_cast(Hy.data()),
+      n);
+  HANDLE_ERROR(cudaGetLastError());
 }
 
 #define BFGS_MAXBOUND 1e+10
@@ -613,32 +631,6 @@ void AnalysisEqs(const std::vector<EqInfo> &eqTab, int eqNum,
   }
 }
 
-double CalcSparsity(const array2<double> &H) {
-  int n = H.rows();
-  int m = H.cols();
-  int zero = 0;
-// parallel
-#pragma omp parallel for reduction(+ : zero)
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < m; j++) {
-      if (H(i, j) < epsZero1)
-        zero++;
-    }
-  }
-  return zero * 1.0 / (n * m);
-}
-
-double CalcSparsity(const std::vector<double> &y) {
-  int n = y.size();
-  int zero = 0;
-#pragma omp parallel for reduction(+ : zero)
-  for (int i = 0; i < n; i++) {
-    if (y[i] < epsZero1)
-      zero++;
-  }
-  return zero * 1.0 / n;
-}
-
 int BFGSSolveEqs(const std::string &filepath) {
   double eps = _GetEps() * _GetEps();
   int itMax = _GetMaxIt();
@@ -703,8 +695,10 @@ int BFGSSolveEqs(const std::string &filepath) {
   int itCounter = 0;
 
   std::vector<double> gPrev, gNow, xPrev, p, y, s, yTH, Hy;
+  thrust::device_vector<double> d_gNow, d_p, d_y, d_s, d_yTH, d_Hy;
 
   array2<double> H;
+  thrust::device_vector<double> d_H;
 
   xPrev = xNow;
   gPrev.resize(n);
@@ -716,8 +710,13 @@ int BFGSSolveEqs(const std::string &filepath) {
   Hy.resize(n);
   H.resize(n, n);
 
-  // store the sparsity of H and the error of f
-  std::vector<double> sparsity, fErr;
+  d_gNow.resize(n);
+  d_p.resize(n);
+  d_y.resize(n);
+  d_s.resize(n);
+  d_yTH.resize(n);
+  d_Hy.resize(n);
+  d_H.resize(n * n);
 
   // STEP1:
   fPrev = _CalcObj(xNow, objEqs, numObjEqs);
@@ -775,10 +774,20 @@ STEP3:
     if (fabs(sy) < epsZero1)
       goto END;
 
-    _CalcyTH(y, H, yTH);
-    _CalcHy(H, y, Hy);
-    _UpdateH(H, yTH, y, sy, s, Hy);
-    _Calcp(H, gNow, p);
+    thrust::copy(y.begin(), y.end(), d_y.begin());
+    thrust::copy(s.begin(), s.end(), d_s.begin());
+    thrust::copy(H.data(), H.data() + H.size(), d_H.begin());
+    thrust::copy(p.begin(), p.end(), d_p.begin());
+    thrust::copy(gNow.begin(), gNow.end(), d_gNow.begin());
+
+    _CalcyTH(d_y, d_H, d_yTH);
+    _CalcHy(d_H, d_y, d_Hy);
+    _UpdateH(d_H, d_yTH, d_y, sy, d_s, d_Hy);
+    _Calcp(d_H, d_gNow, d_p);
+
+    thrust::copy(d_p.begin(), d_p.end(), p.begin());
+    thrust::copy(d_H.begin(), d_H.end(), H.data());
+
     _VecNorm(p);
 
     fPrev = fNow;
