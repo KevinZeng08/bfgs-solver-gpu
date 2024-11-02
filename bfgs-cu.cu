@@ -729,6 +729,8 @@ STEP2:
   }
   k = 0;
   _VecNorm(p);
+  // copy H to device only once
+  thrust::copy(H.data(), H.data() + H.size(), d_H.begin());
 
 STEP3:
   // START_CPU
@@ -776,7 +778,6 @@ STEP3:
 
     thrust::copy(y.begin(), y.end(), d_y.begin());
     thrust::copy(s.begin(), s.end(), d_s.begin());
-    thrust::copy(H.data(), H.data() + H.size(), d_H.begin());
     thrust::copy(p.begin(), p.end(), d_p.begin());
     thrust::copy(gNow.begin(), gNow.end(), d_gNow.begin());
 
@@ -786,7 +787,6 @@ STEP3:
     _Calcp(d_H, d_gNow, d_p);
 
     thrust::copy(d_p.begin(), d_p.end(), p.begin());
-    thrust::copy(d_H.begin(), d_H.end(), H.data());
 
     _VecNorm(p);
 
