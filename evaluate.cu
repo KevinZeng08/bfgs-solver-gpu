@@ -85,13 +85,14 @@ void EvaluateUpdateH() {
   thrust::device_vector<double> d_dot(1);
   _DotProductKernel<<<(n + BLOCK_SIZE_X - 1) / BLOCK_SIZE_X, BLOCK_SIZE_X>>>(
       thrust::raw_pointer_cast(d_yTH.data()),
-      thrust::raw_pointer_cast(d_y.data()), thrust::raw_pointer_cast(d_dot.data()),
-      n);
+      thrust::raw_pointer_cast(d_y.data()),
+      thrust::raw_pointer_cast(d_dot.data()), n);
   dim3 gridSize((n + BLOCK_SIZE_X - 1) / BLOCK_SIZE_X,
                 (n + BLOCK_SIZE_Y - 1) / BLOCK_SIZE_Y);
   dim3 blockSize(BLOCK_SIZE_X, BLOCK_SIZE_Y);
   _UpdateHKernel<<<gridSize, blockSize>>>(
-      thrust::raw_pointer_cast(d_H.data()), thrust::raw_pointer_cast(d_dot.data()),
+      thrust::raw_pointer_cast(d_H.data()),
+      thrust::raw_pointer_cast(d_dot.data()),
       thrust::raw_pointer_cast(d_yTH.data()), sy,
       thrust::raw_pointer_cast(d_s.data()),
       thrust::raw_pointer_cast(d_Hy.data()), n);
