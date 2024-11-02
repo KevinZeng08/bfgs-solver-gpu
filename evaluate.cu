@@ -1,4 +1,4 @@
-// evaluate kernels on different devices
+// evaluate kernel correctness on different devices
 
 #include <random>
 #include <thrust/device_vector.h>
@@ -83,7 +83,7 @@ void EvaluateUpdateH() {
   // gpu version
   thrust::device_vector<double> d_y(y), d_yTH(yTH), d_s(s), d_Hy(Hy);
   thrust::device_vector<double> d_dot(1);
-  _DotProductKernel<<<(n + BLOCK_SIZE_X - 1) / BLOCK_SIZE_X, BLOCK_SIZE_X>>>(
+  _DotProductKernel<<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
       thrust::raw_pointer_cast(d_yTH.data()),
       thrust::raw_pointer_cast(d_y.data()),
       thrust::raw_pointer_cast(d_dot.data()), n);
