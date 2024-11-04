@@ -29,32 +29,40 @@ else(
 )
 endif()
 
-# 添加可执行文件 - CUDA版本
 find_package(CUDA REQUIRED)
-add_executable(BFGSCUDA ${CUDA_SOURCES})
 
-# 链接OpenMP库
-target_link_libraries(BFGSCUDA PUBLIC OpenMP::OpenMP_CXX)
+function(set_cuda_target_properties target_name)
+    set_target_properties(${target_name} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    set_target_properties(${target_name} PROPERTIES CUDA_ARCHITECTURES "86;80;75;72")
     
-# 设置CUDA编译选项
-set_target_properties(BFGSCUDA PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-set_target_properties(BFGSCUDA PROPERTIES CUDA_ARCHITECTURES "86;80;75;72")
-# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --fmad=false --ftz=false --prec-div=true --prec-sqrt=true")
-# debug
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(BFGSCUDA PRIVATE
-        $<$<COMPILE_LANGUAGE:CUDA>: -G -g>
+    # 添加CUTLASS包含路径
+    target_include_directories(${target_name} PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/cutlass/include
     )
-# else()
-#     target_compile_options(BFGSCUDA PRIVATE
-#         $<$<COMPILE_LANGUAGE:CUDA>: -O3>
-#     )
-endif()
+
+    if(USE_CUTLASS)
+        add_definitions(-DUSE_CUTLASS)
+    endif()
+
+    # Debug编译选项
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        target_compile_options(${target_name} PRIVATE
+            $<$<COMPILE_LANGUAGE:CUDA>: -G -g>
+        )
+    endif()
+
+    # 链接OpenMP库
+    target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_CXX)
+endfunction()
+
+# 添加可执行文件 - CUDA版本
+add_executable(BFGSCUDA ${CUDA_SOURCES})
+set_cuda_target_properties(BFGSCUDA)
+
+# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --fmad=false --ftz=false --prec-div=true --prec-sqrt=true")
 
 add_executable(evaluate evaluate.cu)
-
-set_target_properties(evaluate PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-set_target_properties(evaluate PROPERTIES CUDA_ARCHITECTURES "86;80;75;72")
+set_cuda_target_properties(evaluate)
 
 # 为方便使用，可以添加别名目标
 add_custom_target(cpu

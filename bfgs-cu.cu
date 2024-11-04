@@ -426,10 +426,16 @@ static void _CalcyTH(const thrust::device_vector<double> &y,
   int n = y.size();
 
   thrust::fill(yTH.begin(), yTH.end(), 0.0);
+#ifdef USE_CUTLASS
+  _GEMVCutlass<double>(thrust::raw_pointer_cast(H.data()), GPULayout::COL_MAJOR,
+                       thrust::raw_pointer_cast(y.data()),
+                       thrust::raw_pointer_cast(yTH.data()), n, n);
+#else
   _GEMVKernel<double><<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
       thrust::raw_pointer_cast(H.data()), GPULayout::COL_MAJOR,
       thrust::raw_pointer_cast(y.data()), thrust::raw_pointer_cast(yTH.data()),
       n, n);
+#endif
 }
 
 static void _CalcHy(const thrust::device_vector<double> &H,
@@ -437,10 +443,16 @@ static void _CalcHy(const thrust::device_vector<double> &H,
                     thrust::device_vector<double> &Hy) {
   int n = y.size();
 
+#ifdef USE_CUTLASS
+  _GEMVCutlass<double>(thrust::raw_pointer_cast(H.data()), GPULayout::ROW_MAJOR,
+                       thrust::raw_pointer_cast(y.data()),
+                       thrust::raw_pointer_cast(Hy.data()), n, n);
+#else
   _GEMVKernel<double><<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
       thrust::raw_pointer_cast(H.data()), GPULayout::ROW_MAJOR,
       thrust::raw_pointer_cast(y.data()), thrust::raw_pointer_cast(Hy.data()),
       n, n);
+#endif
 }
 
 static void _Calcp(const thrust::device_vector<double> &H,
