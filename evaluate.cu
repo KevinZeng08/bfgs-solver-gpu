@@ -47,19 +47,20 @@ void EvaluateGEMV() {
   thrust::device_vector<double> d_mat_cutlass(mat), d_vec_row_cutlass(vec_row),
       d_vec_col_cutlass(vec_col);
   thrust::device_vector<double> d_out_row_cutlass(n), d_out_col_cutlass(m);
-  _GEMVCutlass<double>(thrust::raw_pointer_cast(d_mat_cutlass.data()),
-                       GPULayout::ROW_MAJOR,
-                       thrust::raw_pointer_cast(d_vec_row_cutlass.data()),
-                       thrust::raw_pointer_cast(d_out_row_cutlass.data()), n, m);
-  _GEMVCutlass<double>(thrust::raw_pointer_cast(d_mat_cutlass.data()),
-                       GPULayout::COL_MAJOR,
-                       thrust::raw_pointer_cast(d_vec_col_cutlass.data()),
-                       thrust::raw_pointer_cast(d_out_col_cutlass.data()), n, m);
+  _GEMVCutlass<double>(
+      thrust::raw_pointer_cast(d_mat_cutlass.data()), GPULayout::ROW_MAJOR,
+      thrust::raw_pointer_cast(d_vec_row_cutlass.data()),
+      thrust::raw_pointer_cast(d_out_row_cutlass.data()), n, m);
+  _GEMVCutlass<double>(
+      thrust::raw_pointer_cast(d_mat_cutlass.data()), GPULayout::COL_MAJOR,
+      thrust::raw_pointer_cast(d_vec_col_cutlass.data()),
+      thrust::raw_pointer_cast(d_out_col_cutlass.data()), n, m);
 
   HANDLE_ERROR(cudaGetLastError());
 
   // check
-  std::vector<double> out_row2(n), out_col2(m), out_row_cutlass(n), out_col_cutlass(m);
+  std::vector<double> out_row2(n), out_col2(m), out_row_cutlass(n),
+      out_col_cutlass(m);
   thrust::copy(d_out_row.begin(), d_out_row.end(), out_row2.begin());
   thrust::copy(d_out_col.begin(), d_out_col.end(), out_col2.begin());
   thrust::copy(d_out_row_cutlass.begin(), d_out_row_cutlass.end(),

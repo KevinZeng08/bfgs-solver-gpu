@@ -4,11 +4,11 @@
 #include <cuda_runtime.h>
 #include <stdio.h>
 
+#include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemv.h"
 #include "cutlass/gemm/kernel/gemv.h"
-#include "cutlass/cutlass.h"
-#include "cutlass/tensor_ref.h"
 #include "cutlass/matrix_coord.h"
+#include "cutlass/tensor_ref.h"
 
 #define BLOCK_SIZE 256
 #define BLOCK_SIZE_X 16
@@ -16,47 +16,42 @@
 enum class GPULayout { ROW_MAJOR, COL_MAJOR };
 
 // Cutlass GEMV code reference: https://github.com/NVIDIA/cutlass/issues/909
-#define CUTLASS_CHECK(status)                                                         \
-  {                                                                                   \
-    cutlass::Status error = status;                                                   \
-    if (error != cutlass::Status::kSuccess) {                                         \
-      auto msg = std::string("[") + __FILE__ + "] Got cutlass error: " +              \
-          cutlassGetStatusString(error) + " at: " + std::to_string(__LINE__);         \
-      std::cerr << msg << std::endl;                                                  \
-      throw std::runtime_error(msg);                                                  \
-    }                                                                                 \
+#define CUTLASS_CHECK(status)                                                  \
+  {                                                                            \
+    cutlass::Status error = status;                                            \
+    if (error != cutlass::Status::kSuccess) {                                  \
+      auto msg = std::string("[") + __FILE__ +                                 \
+                 "] Got cutlass error: " + cutlassGetStatusString(error) +     \
+                 " at: " + std::to_string(__LINE__);                           \
+      std::cerr << msg << std::endl;                                           \
+      throw std::runtime_error(msg);                                           \
+    }                                                                          \
   }
 
 template <typename T>
 void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
-                   int m) {
+                  int m) {
   using ElementAccumulator = T;
   using ElementA = T;
   using ElementB = T;
   using ElementC = T;
   using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
-      ElementC,
-      1,
-      ElementAccumulator, 
-      ElementAccumulator>;
+      ElementC, 1, ElementAccumulator, ElementAccumulator>;
 
   if (layout == GPULayout::ROW_MAJOR) {
     using LayoutA = cutlass::layout::RowMajor;
-    using GemvKernel = cutlass::gemm::kernel::Gemv<ElementA, LayoutA, ElementB,
-                                                   ElementC, ElementAccumulator, EpilogueOp>;
+    using GemvKernel =
+        cutlass::gemm::kernel::Gemv<ElementA, LayoutA, ElementB, ElementC,
+                                    ElementAccumulator, EpilogueOp>;
     using DeviceGemvInstance = cutlass::gemm::device::Gemv<GemvKernel>;
 
     T alpha = 1.0;
     T beta = 0.0;
 
     typename DeviceGemvInstance::Arguments args(
-      {n, m},
-      {alpha, beta},
-      cutlass::TensorRef<T, LayoutA>(const_cast<T*>(mat), LayoutA(m)),
-      vec,
-      out,
-      out
-    );
+        {n, m}, {alpha, beta},
+        cutlass::TensorRef<T, LayoutA>(const_cast<T *>(mat), LayoutA(m)), vec,
+        out, out);
     DeviceGemvInstance gemv_op;
     cutlass::Status status;
     status = gemv_op.can_implement(args);
@@ -68,24 +63,18 @@ void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
     CUTLASS_CHECK(status);
   } else if (layout == GPULayout::COL_MAJOR) {
     using LayoutA = cutlass::layout::ColumnMajor;
-    using GemvKernel = cutlass::gemm::kernel::Gemv<ElementA, LayoutA, ElementB,
-                                                   ElementC, ElementAccumulator, EpilogueOp>;
+    using GemvKernel =
+        cutlass::gemm::kernel::Gemv<ElementA, LayoutA, ElementB, ElementC,
+                                    ElementAccumulator, EpilogueOp>;
     using DeviceGemvInstance = cutlass::gemm::device::Gemv<GemvKernel>;
 
     T alpha = 1.0;
     T beta = 0.0;
 
     typename DeviceGemvInstance::Arguments args(
-      {m, n},
-      {alpha, beta},
-      cutlass::TensorRef<T, LayoutA>(const_cast<T*>(mat), LayoutA(m)),
-      vec,
-      out,
-      out,
-      1,
-      1,
-      1
-    );
+        {m, n}, {alpha, beta},
+        cutlass::TensorRef<T, LayoutA>(const_cast<T *>(mat), LayoutA(m)), vec,
+        out, out, 1, 1, 1);
     DeviceGemvInstance gemv_op;
     cutlass::Status status;
     status = gemv_op.can_implement(args);
