@@ -61,8 +61,9 @@ void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
 
     status = gemv_op();
     CUTLASS_CHECK(status);
-  } else if (layout == GPULayout::COL_MAJOR) {
-    using LayoutA = cutlass::layout::ColumnMajor;
+  } else if (layout == GPULayout::COL_MAJOR) { // transpose mat
+    // TODO: For cutlass GEMV, RowMajor is much faster than ColumnMajor
+    using LayoutA = cutlass::layout::RowMajor;
     using GemvKernel =
         cutlass::gemm::kernel::Gemv<ElementA, LayoutA, ElementB, ElementC,
                                     ElementAccumulator, EpilogueOp>;
@@ -73,8 +74,8 @@ void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
 
     typename DeviceGemvInstance::Arguments args(
         {m, n}, {alpha, beta},
-        cutlass::TensorRef<T, LayoutA>(const_cast<T *>(mat), LayoutA(m)), vec,
-        out, out, 1, 1, 1);
+        cutlass::TensorRef<T, LayoutA>(const_cast<T *>(mat), LayoutA(n)), vec,
+        out, out);
     DeviceGemvInstance gemv_op;
     cutlass::Status status;
     status = gemv_op.can_implement(args);
