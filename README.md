@@ -16,19 +16,11 @@ git clone --recurse-submodules https://github.com/KevinZeng08/bfgs-solver-gpu.gi
 ```bash
 # build target
 mkdir build && cd build
-cmake ..
+cmake -DUSE_CUTLASS=ON ..
 make # optional targets: cpu,cuda,eval
 ./BFGSCPU ../data/bfgs-large.dat
 ./BFGSCUDA ../data/bfgs-large.dat
 ```
-
-## Use cutlass
-
-```bash
-cmake .. -DUSE_CUTLASS=ON
-make
-```
-
 ## Results
 
 优化的结果可视化对比
