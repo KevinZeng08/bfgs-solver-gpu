@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 
+# 仅编译当前架构
+set(CMAKE_CUDA_ARCHITECTURES "native")
+
 project(BFGSProject LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -38,11 +41,15 @@ function(set_cuda_target_properties target_name)
     # 添加CUTLASS包含路径
     target_include_directories(${target_name} PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/cutlass/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/cutlass/tools/util/include
     )
 
     if(USE_CUTLASS)
         add_definitions(-DUSE_CUTLASS)
     endif()
+
+    # use cublas by default
+    add_definitions(-DUSE_CUBLAS)
 
     # Debug编译选项
     if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -56,7 +63,7 @@ function(set_cuda_target_properties target_name)
     endif()
 
     # 链接OpenMP库
-    target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_CXX)
+    target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_CXX ${CUDA_CUBLAS_LIBRARIES})
 endfunction()
 
 # 添加可执行文件 - CUDA版本

@@ -1,6 +1,7 @@
 // CUDA operations for BFGS
 #pragma once
 
+#include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <stdio.h>
 
@@ -9,6 +10,7 @@
 #include "cutlass/gemm/kernel/gemv.h"
 #include "cutlass/matrix_coord.h"
 #include "cutlass/tensor_ref.h"
+#include "helper_cuda.h"
 
 #define BLOCK_SIZE 256
 #define BLOCK_SIZE_X 16
@@ -29,6 +31,19 @@ enum class GPULayout { ROW_MAJOR, COL_MAJOR };
   }
 
 template <typename T>
+void _GEMVCublas(const T *mat, GPULayout layout, const T *vec, T *out, int n,
+                 int m, cublasHandle_t &handle) {
+  if (layout == GPULayout::ROW_MAJOR) {
+    throw std::runtime_error("Not implemented");
+  } else if (layout == GPULayout::COL_MAJOR) {
+    T alpha = 1.0;
+    T beta = 0.0;
+    checkCudaErrors(cublasDgemv(handle, CUBLAS_OP_T, n, m, &alpha, mat, n, vec,
+                                1, &beta, out, 1));
+  }
+}
+
+template <typename T>
 void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
                   int m) {
   using ElementAccumulator = T;
@@ -37,12 +52,15 @@ void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
   using ElementC = T;
   using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
       ElementC, 1, ElementAccumulator, ElementAccumulator>;
+  const int kElementsPerAccess = 1; // default 1
+  const int kThreadsPerRow = 16;    // default 16
+  const int kThreadCount = 128;     // default 128
 
   if (layout == GPULayout::ROW_MAJOR) {
     using LayoutA = cutlass::layout::RowMajor;
-    using GemvKernel =
-        cutlass::gemm::kernel::Gemv<ElementA, LayoutA, ElementB, ElementC,
-                                    ElementAccumulator, EpilogueOp>;
+    using GemvKernel = cutlass::gemm::kernel::Gemv<
+        ElementA, LayoutA, ElementB, ElementC, ElementAccumulator, EpilogueOp,
+        kElementsPerAccess, kThreadCount, kThreadsPerRow>;
     using DeviceGemvInstance = cutlass::gemm::device::Gemv<GemvKernel>;
 
     T alpha = 1.0;
@@ -62,29 +80,8 @@ void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
     status = gemv_op();
     CUTLASS_CHECK(status);
   } else if (layout == GPULayout::COL_MAJOR) { // transpose mat
-    // TODO: For cutlass GEMV, RowMajor is much faster than ColumnMajor
-    using LayoutA = cutlass::layout::RowMajor;
-    using GemvKernel =
-        cutlass::gemm::kernel::Gemv<ElementA, LayoutA, ElementB, ElementC,
-                                    ElementAccumulator, EpilogueOp>;
-    using DeviceGemvInstance = cutlass::gemm::device::Gemv<GemvKernel>;
-
-    T alpha = 1.0;
-    T beta = 0.0;
-
-    typename DeviceGemvInstance::Arguments args(
-        {m, n}, {alpha, beta},
-        cutlass::TensorRef<T, LayoutA>(const_cast<T *>(mat), LayoutA(n)), vec,
-        out, out);
-    DeviceGemvInstance gemv_op;
-    cutlass::Status status;
-    status = gemv_op.can_implement(args);
-    CUTLASS_CHECK(status);
-    status = gemv_op.initialize(args);
-    CUTLASS_CHECK(status);
-
-    status = gemv_op();
-    CUTLASS_CHECK(status);
+    // TODO: cutlass GEMV with transposed matrix
+    throw std::runtime_error("Not implemented");
   }
 }
 
@@ -137,18 +134,48 @@ static __global__ void _DotProductKernel(const double *yTH, const double *y,
   }
 
   if (threadIdx.x == 0) {
-    atomicAdd(dot, cache[0]);
+    dot[blockIdx.x] = cache[0];
   }
 }
 
+// TODO: unused
 template <typename T>
-static __global__ void _UpdateHKernel(T *H, const T *dot,
-                                      const T *yTH, T sy,
-                                      const T *s, const T *Hy,
-                                      int n) {
+static __global__ void _FusedUpdateHGemvKernel(T *H, double dot, const T *yTH,
+                                               T sy, const T *s, const T *Hy,
+                                               int n) {
   int x_id = blockIdx.x * blockDim.x + threadIdx.x;
   int y_id = blockIdx.y * blockDim.y + threadIdx.y;
-  T tmp = (1.0 + dot[0] / sy);
+  int x_tid = threadIdx.x;
+  int y_tid = threadIdx.y;
+
+  __shared__ T H_shared[BLOCK_SIZE_X][BLOCK_SIZE_Y];
+
+  // load H to shared memory
+  if (x_id < n && y_id < n) {
+    H_shared[y_tid][x_tid] = H[y_id * n + x_id];
+  }
+
+  __syncthreads();
+
+  T tmp = (1.0 + dot / sy);
+  if (x_tid < n && y_tid < n) {
+    H_shared[y_tid][x_tid] += (((tmp * s[y_id] * s[x_id]) - Hy[y_id] * s[x_id] -
+                                s[y_id] * yTH[x_id]) /
+                               sy);
+  }
+
+  __syncthreads();
+
+  // store back to global memory
+  if (y_id < n && x_id < n) {
+    H[y_id * n + x_id] = H_shared[y_tid][x_tid];
+  }
+}
+template <typename T>
+static __global__ void _UpdateHKernel(T *H, double tmp, const T *yTH, T sy,
+                                      const T *s, const T *Hy, int n) {
+  int x_id = blockIdx.x * blockDim.x + threadIdx.x;
+  int y_id = blockIdx.y * blockDim.y + threadIdx.y;
 
   while (x_id < n && y_id < n) {
     H[x_id * n + y_id] += (((tmp * s[x_id] * s[y_id]) - Hy[x_id] * s[y_id] -

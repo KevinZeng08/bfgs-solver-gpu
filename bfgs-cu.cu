@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <thrust/device_vector.h>
+#include <thrust/inner_product.h>
 
 #include "ops.cuh"
 #include "utils.cuh"
@@ -30,6 +31,7 @@
 
 std::vector<int> objEqHeads, gradEqHeads;  // start offset
 std::vector<double> objEqVals, gradEqVals; // results for equations
+cublasHandle_t handle;
 
 enum NodeType { NODE_CONST, NODE_OPER, NODE_VAR };
 
@@ -426,10 +428,17 @@ static void _CalcyTH(const thrust::device_vector<double> &y,
   int n = y.size();
 
   thrust::fill(yTH.begin(), yTH.end(), 0.0);
-#ifdef USE_CUTLASS
-  _GEMVCutlass<double>(thrust::raw_pointer_cast(H.data()), GPULayout::COL_MAJOR,
-                       thrust::raw_pointer_cast(y.data()),
-                       thrust::raw_pointer_cast(yTH.data()), n, n);
+  // TODO: Cutlass GEMV with transposed matrix
+// #ifdef USE_CUTLASS
+//   _GEMVCutlass<double>(thrust::raw_pointer_cast(H.data()),
+//   GPULayout::COL_MAJOR,
+//                        thrust::raw_pointer_cast(y.data()),
+//                        thrust::raw_pointer_cast(yTH.data()), n, n);
+// #else
+#ifdef USE_CUBLAS
+  _GEMVCublas<double>(thrust::raw_pointer_cast(H.data()), GPULayout::COL_MAJOR,
+                      thrust::raw_pointer_cast(y.data()),
+                      thrust::raw_pointer_cast(yTH.data()), n, n, handle);
 #else
   _GEMVKernel<double><<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
       thrust::raw_pointer_cast(H.data()), GPULayout::COL_MAJOR,
@@ -473,19 +482,35 @@ static void _UpdateH(thrust::device_vector<double> &H,
                      const thrust::device_vector<double> &s,
                      const thrust::device_vector<double> &Hy) {
   int n = y.size();
-  thrust::device_vector<double> dot(1);
-  _DotProductKernel<<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
-      thrust::raw_pointer_cast(yTH.data()), thrust::raw_pointer_cast(y.data()),
-      thrust::raw_pointer_cast(dot.data()), n);
-
+  double dot = thrust::inner_product(yTH.begin(), yTH.end(), y.begin(), 0.0);
+  // thrust::device_vector<double> dots((n + BLOCK_SIZE - 1) / BLOCK_SIZE);
+  // _DotProductKernel<<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
+  //     thrust::raw_pointer_cast(yTH.data()),
+  //     thrust::raw_pointer_cast(y.data()),
+  //     thrust::raw_pointer_cast(dots.data()), n);
+  // double dot = thrust::reduce(dots.begin(), dots.end());
+  double tmp = (1.0 + dot / sy);
   dim3 blockSize(BLOCK_SIZE_X, BLOCK_SIZE_Y);
   dim3 gridSize((n + BLOCK_SIZE_X - 1) / BLOCK_SIZE_X,
                 (n + BLOCK_SIZE_Y - 1) / BLOCK_SIZE_Y);
-  _UpdateHKernel<double><<<gridSize, blockSize>>>(
-      thrust::raw_pointer_cast(H.data()), thrust::raw_pointer_cast(dot.data()),
-      thrust::raw_pointer_cast(yTH.data()), sy,
-      thrust::raw_pointer_cast(s.data()), thrust::raw_pointer_cast(Hy.data()),
-      n);
+  _UpdateHKernel<double>
+      <<<gridSize, blockSize>>>(thrust::raw_pointer_cast(H.data()), tmp,
+                                thrust::raw_pointer_cast(yTH.data()), sy,
+                                thrust::raw_pointer_cast(s.data()),
+                                thrust::raw_pointer_cast(Hy.data()), n);
+  HANDLE_ERROR(cudaGetLastError());
+}
+
+static __global__ void _InitHKernel(double *H, int n) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < n) {
+    H[idx * n + idx] = 1.0;
+  }
+}
+
+static void _InitH(thrust::device_vector<double> &H, int n) {
+  _InitHKernel<<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
+      thrust::raw_pointer_cast(H.data()), n);
   HANDLE_ERROR(cudaGetLastError());
 }
 
@@ -649,6 +674,8 @@ int BFGSSolveEqs(const std::string &filepath) {
 
   double step = _GetStep();
 
+  HANDLE_ERROR(cublasCreate(&handle));
+
   std::vector<double> xNow, xKeep;
   std::vector<int> varMap, revMap;
   std::vector<EqInfo> objEqs;
@@ -709,7 +736,7 @@ int BFGSSolveEqs(const std::string &filepath) {
   std::vector<double> gPrev, gNow, xPrev, p, y, s, yTH, Hy;
   thrust::device_vector<double> d_gNow, d_p, d_y, d_s, d_yTH, d_Hy;
 
-  array2<double> H;
+  // array2<double> H;
   thrust::device_vector<double> d_H;
 
   xPrev = xNow;
@@ -720,7 +747,7 @@ int BFGSSolveEqs(const std::string &filepath) {
   s.resize(n);
   yTH.resize(n);
   Hy.resize(n);
-  H.resize(n, n);
+  // H.resize(n, n);
 
   d_gNow.resize(n);
   d_p.resize(n);
@@ -736,13 +763,12 @@ int BFGSSolveEqs(const std::string &filepath) {
 
 STEP2:
   for (int i = 0; i < n; i++) {
-    H(i, i) = 1.0;
     p[i] = -gPrev[i];
   }
   k = 0;
   _VecNorm(p);
-  // copy H to device only once
-  thrust::copy(H.data(), H.data() + H.size(), d_H.begin());
+  // init H
+  _InitH(d_H, n);
 
 STEP3:
   // START_CPU
@@ -814,6 +840,8 @@ END:
   std::cout << "f(x) = " << fNow << std::endl;
   double dt = omp_get_wtime() - t0;
   printf("###Solver totally used %2.5f s ...\n", dt);
+
+  HANDLE_ERROR(cublasDestroy(handle));
 
   // Put results back...
   if (fNow < eps) {
