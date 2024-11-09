@@ -49,6 +49,10 @@ function(set_cuda_target_properties target_name)
         target_compile_options(${target_name} PRIVATE
             $<$<COMPILE_LANGUAGE:CUDA>: -G -g>
         )
+    else()
+        target_compile_options(${target_name} PRIVATE
+            $<$<COMPILE_LANGUAGE:CUDA>: -O3 -march=native -funroll-loops>
+        )
     endif()
 
     # 链接OpenMP库
@@ -60,6 +64,8 @@ add_executable(BFGSCUDA ${CUDA_SOURCES})
 set_cuda_target_properties(BFGSCUDA)
 
 # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --fmad=false --ftz=false --prec-div=true --prec-sqrt=true")
+# remove cutlass warning
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
 
 add_executable(evaluate evaluate.cu)
 set_cuda_target_properties(evaluate)

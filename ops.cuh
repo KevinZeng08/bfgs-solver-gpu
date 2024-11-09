@@ -141,17 +141,20 @@ static __global__ void _DotProductKernel(const double *yTH, const double *y,
   }
 }
 
-static __global__ void _UpdateHKernel(double *H, const double *dot,
-                                      const double *yTH, double sy,
-                                      const double *s, const double *Hy,
+template <typename T>
+static __global__ void _UpdateHKernel(T *H, const T *dot,
+                                      const T *yTH, T sy,
+                                      const T *s, const T *Hy,
                                       int n) {
   int x_id = blockIdx.x * blockDim.x + threadIdx.x;
   int y_id = blockIdx.y * blockDim.y + threadIdx.y;
+  T tmp = (1.0 + dot[0] / sy);
 
-  double tmp = (1.0 + dot[0] / sy);
-  if (x_id < n && y_id < n) {
+  while (x_id < n && y_id < n) {
     H[x_id * n + y_id] += (((tmp * s[x_id] * s[y_id]) - Hy[x_id] * s[y_id] -
                             s[x_id] * yTH[y_id]) /
                            sy);
+    x_id += blockDim.x * gridDim.x;
+    y_id += blockDim.y * gridDim.y;
   }
 }

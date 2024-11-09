@@ -481,7 +481,7 @@ static void _UpdateH(thrust::device_vector<double> &H,
   dim3 blockSize(BLOCK_SIZE_X, BLOCK_SIZE_Y);
   dim3 gridSize((n + BLOCK_SIZE_X - 1) / BLOCK_SIZE_X,
                 (n + BLOCK_SIZE_Y - 1) / BLOCK_SIZE_Y);
-  _UpdateHKernel<<<gridSize, blockSize>>>(
+  _UpdateHKernel<double><<<gridSize, blockSize>>>(
       thrust::raw_pointer_cast(H.data()), thrust::raw_pointer_cast(dot.data()),
       thrust::raw_pointer_cast(yTH.data()), sy,
       thrust::raw_pointer_cast(s.data()), thrust::raw_pointer_cast(Hy.data()),
@@ -752,8 +752,8 @@ STEP3:
   xPrev = xNow;
   _LinearSearch(xPrev, p, step, xNow, objEqs, numObjEqs);
   fNow = _CalcObj(xNow, objEqs, numObjEqs);
-  std::cout << itCounter << " iterations, "
-            << "f(x) = " << fNow << std::endl;
+  // std::cout << itCounter << " iterations, "
+  //           << "f(x) = " << fNow << std::endl;
 
   if (fNow < eps)
     goto END;
