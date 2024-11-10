@@ -456,6 +456,11 @@ static void _CalcHy(const thrust::device_vector<double> &H,
                        thrust::raw_pointer_cast(y.data()),
                        thrust::raw_pointer_cast(Hy.data()), n, n);
 #else
+// #ifdef USE_CUBLAS
+//   _GEMVCublas<double>(thrust::raw_pointer_cast(H.data()), GPULayout::ROW_MAJOR,
+//                       thrust::raw_pointer_cast(y.data()),
+//                       thrust::raw_pointer_cast(Hy.data()), n, n, handle);
+// #else
   _GEMVKernel<double><<<(n + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
       thrust::raw_pointer_cast(H.data()), GPULayout::ROW_MAJOR,
       thrust::raw_pointer_cast(y.data()), thrust::raw_pointer_cast(Hy.data()),

@@ -33,11 +33,12 @@ enum class GPULayout { ROW_MAJOR, COL_MAJOR };
 template <typename T>
 void _GEMVCublas(const T *mat, GPULayout layout, const T *vec, T *out, int n,
                  int m, cublasHandle_t &handle) {
+  T alpha = 1.0;
+  T beta = 0.0;
   if (layout == GPULayout::ROW_MAJOR) {
-    throw std::runtime_error("Not implemented");
+    checkCudaErrors(cublasDgemv(handle, CUBLAS_OP_T, m, n, &alpha, mat, m, vec,
+                                1, &beta, out, 1));
   } else if (layout == GPULayout::COL_MAJOR) {
-    T alpha = 1.0;
-    T beta = 0.0;
     // Column major, leading dimension is number of rows
     checkCudaErrors(cublasDgemv(handle, CUBLAS_OP_N, m, n, &alpha, mat, m, vec,
                                 1, &beta, out, 1));
@@ -57,15 +58,15 @@ void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
   const int kThreadsPerRow = 16;    // default 16 for RowMajor, 1 for ColumnMajor
   const int kThreadCount = 128;     // default 128
 
+  T alpha = 1.0;
+  T beta = 0.0;
+
   if (layout == GPULayout::ROW_MAJOR) {
     using LayoutA = cutlass::layout::RowMajor;
     using GemvKernel = cutlass::gemm::kernel::Gemv<
         ElementA, LayoutA, ElementB, ElementC, ElementAccumulator, EpilogueOp,
         kElementsPerAccess, kThreadCount, kThreadsPerRow>;
     using DeviceGemvInstance = cutlass::gemm::device::Gemv<GemvKernel>;
-
-    T alpha = 1.0;
-    T beta = 0.0;
 
     typename DeviceGemvInstance::Arguments args(
         {n, m}, {alpha, beta},
@@ -88,9 +89,6 @@ void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
         ElementA, LayoutA, ElementB, ElementC, ElementAccumulator, EpilogueOp,
         kElementsPerAccess, kThreadCount, kThreadsPerRow>;
     using DeviceGemvInstance = cutlass::gemm::device::Gemv<GemvKernel>;
-
-    T alpha = 1.0;
-    T beta = 0.0;
 
     typename DeviceGemvInstance::Arguments args(
         {m, n}, {alpha, beta},

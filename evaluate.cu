@@ -47,8 +47,13 @@ void EvaluateGENVCutlassAndCublas() {
   cublasHandle_t handle;
   cublasCreate(&handle);
   thrust::device_vector<double> d_mat_cublas(mat),
-      d_vec_col_cublas(vec_col);
-  thrust::device_vector<double> d_out_col_cublas(m);
+      d_vec_row_cublas(vec_row), d_vec_col_cublas(vec_col);
+  thrust::device_vector<double> d_out_row_cublas(n), d_out_col_cublas(m);
+  _GEMVCublas<double>(thrust::raw_pointer_cast(d_mat_cublas.data()),
+                      GPULayout::ROW_MAJOR,
+                      thrust::raw_pointer_cast(d_vec_row_cublas.data()),
+                      thrust::raw_pointer_cast(d_out_row_cublas.data()), n, m,
+                      handle);
   _GEMVCublas<double>(thrust::raw_pointer_cast(d_mat_cublas.data()),
                       GPULayout::COL_MAJOR,
                       thrust::raw_pointer_cast(d_vec_col_cublas.data()),
@@ -59,15 +64,18 @@ void EvaluateGENVCutlassAndCublas() {
   // check
   std::vector<double> out_row_cutlass(n);
   std::vector<double> out_col_cutlass(m);
-  std::vector<double> out_col_cublas(m);
+  std::vector<double> out_col_cublas(m), out_row_cublas(n);
   thrust::copy(d_out_row_cutlass.begin(), d_out_row_cutlass.end(),
                out_row_cutlass.begin());
+  thrust::copy(d_out_row_cublas.begin(), d_out_row_cublas.end(),
+               out_row_cublas.begin());
   thrust::copy(d_out_col_cutlass.begin(), d_out_col_cutlass.end(),
                out_col_cutlass.begin());
   thrust::copy(d_out_col_cublas.begin(), d_out_col_cublas.end(),
                out_col_cublas.begin());
   for (int i = 0; i < n; i++) {
     assert(fabs(out_row[i] - out_row_cutlass[i]) < 1e-6);
+    assert(fabs(out_row[i] - out_row_cublas[i]) < 1e-6);
   }
   for (int i = 0; i < m; i++) {
     // printf("%f %f\n", out_col[i], out_col_cublas[i]);
