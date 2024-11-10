@@ -38,7 +38,8 @@ void _GEMVCublas(const T *mat, GPULayout layout, const T *vec, T *out, int n,
   } else if (layout == GPULayout::COL_MAJOR) {
     T alpha = 1.0;
     T beta = 0.0;
-    checkCudaErrors(cublasDgemv(handle, CUBLAS_OP_T, n, m, &alpha, mat, n, vec,
+    // Column major, leading dimension is number of rows
+    checkCudaErrors(cublasDgemv(handle, CUBLAS_OP_N, m, n, &alpha, mat, m, vec,
                                 1, &beta, out, 1));
   }
 }
@@ -53,7 +54,7 @@ void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
   using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
       ElementC, 1, ElementAccumulator, ElementAccumulator>;
   const int kElementsPerAccess = 1; // default 1
-  const int kThreadsPerRow = 16;    // default 16
+  const int kThreadsPerRow = 16;    // default 16 for RowMajor, 1 for ColumnMajor
   const int kThreadCount = 128;     // default 128
 
   if (layout == GPULayout::ROW_MAJOR) {
@@ -80,8 +81,30 @@ void _GEMVCutlass(const T *mat, GPULayout layout, const T *vec, T *out, int n,
     status = gemv_op();
     CUTLASS_CHECK(status);
   } else if (layout == GPULayout::COL_MAJOR) { // transpose mat
-    // TODO: cutlass GEMV with transposed matrix
-    throw std::runtime_error("Not implemented");
+    // cutlass GEMV with transposed matrix
+    // TODO: cutlass ColumnMajor GEMV is much slower!
+    using LayoutA = cutlass::layout::ColumnMajor;
+    using GemvKernel = cutlass::gemm::kernel::Gemv<
+        ElementA, LayoutA, ElementB, ElementC, ElementAccumulator, EpilogueOp,
+        kElementsPerAccess, kThreadCount, kThreadsPerRow>;
+    using DeviceGemvInstance = cutlass::gemm::device::Gemv<GemvKernel>;
+
+    T alpha = 1.0;
+    T beta = 0.0;
+
+    typename DeviceGemvInstance::Arguments args(
+        {m, n}, {alpha, beta},
+        cutlass::TensorRef<T, LayoutA>(const_cast<T *>(mat), LayoutA(m)), vec,
+        out, out, 1, 1, 1);
+    DeviceGemvInstance gemv_op;
+    cutlass::Status status;
+    status = gemv_op.can_implement(args);
+    CUTLASS_CHECK(status);
+    status = gemv_op.initialize(args);
+    CUTLASS_CHECK(status);
+
+    status = gemv_op();
+    CUTLASS_CHECK(status);
   }
 }
 

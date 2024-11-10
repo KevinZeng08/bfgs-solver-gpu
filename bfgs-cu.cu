@@ -428,7 +428,6 @@ static void _CalcyTH(const thrust::device_vector<double> &y,
   int n = y.size();
 
   thrust::fill(yTH.begin(), yTH.end(), 0.0);
-  // TODO: Cutlass GEMV with transposed matrix
 // #ifdef USE_CUTLASS
 //   _GEMVCutlass<double>(thrust::raw_pointer_cast(H.data()),
 //   GPULayout::COL_MAJOR,
