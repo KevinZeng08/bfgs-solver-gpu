@@ -4,7 +4,24 @@
 
 优化BFGS求解器
 
-## Quickstart
+## How to Use
+
+Environment: Ubuntu 20.04, CUDA 12.1
+
+Install CMake and CUDA
+
+```bash
+# install cmake from Kitware
+# 添加Kitware的APT仓库密钥
+wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
+
+# 添加Kitware的APT仓库
+sudo apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main"
+
+# 更新并安装
+sudo apt update
+sudo apt install cmake
+```
 
 Clone this repository and build
 
