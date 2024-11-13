@@ -36,7 +36,7 @@ find_package(CUDA REQUIRED)
 
 function(set_cuda_target_properties target_name)
     set_target_properties(${target_name} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    set_target_properties(${target_name} PROPERTIES CUDA_ARCHITECTURES "86;80;75;72")
+    set_target_properties(${target_name} PROPERTIES CUDA_ARCHITECTURES "native")
     
     # 添加CUTLASS包含路径
     target_include_directories(${target_name} PUBLIC

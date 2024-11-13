@@ -41,8 +41,8 @@ Environment
 - GPU: NVIDIA RTX A5000 24GB, CUDA 12.1
 - OS: Ubuntu 20.04
 
-**49x** speedup
+**47x** speedup
 
 |  | BFGS-CPU | BFGS-CUDA |
 | --- | --- | --- |
-| Latency (s) | 57.2 | 1.17 |
+| Latency (s) | 56.2 | 1.19 |
