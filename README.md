@@ -36,8 +36,13 @@ make # optional targets: cpu,cuda,eval
 ```
 ## Results
 
+Environment
+- CPU: Intel(R) Xeon(R) Gold 5218R CPU @ 2.10GHz
+- GPU: NVIDIA RTX A5000 24GB, CUDA 12.1
+- OS: Ubuntu 20.04
+
 **49x** speedup
 
 |  | BFGS-CPU | BFGS-CUDA |
 | --- | --- | --- |
-| 时间 (s) | 57.2 | 1.17 |
+| Latency (s) | 57.2 | 1.17 |
