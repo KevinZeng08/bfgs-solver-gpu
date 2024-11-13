@@ -1,8 +1,4 @@
-# 浙江大学GPU计算与应用课程作业
-
-## 任务概述
-
-优化BFGS求解器
+# 使用GPU优化BFGS求解器
 
 ## How to Use
 
@@ -40,8 +36,8 @@ make # optional targets: cpu,cuda,eval
 ```
 ## Results
 
-优化的结果可视化对比
+**49x** speedup
 
-## Methods
-
-使用了哪些优化手段
+|  | BFGS-CPU | BFGS-CUDA |
+| --- | --- | --- |
+| 时间 (s) | 57.2 | 1.17 |
